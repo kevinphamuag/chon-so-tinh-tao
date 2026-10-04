@@ -753,8 +753,8 @@ function mdLite(text) {
 function viewAI() {
   if (!S.aiKey) {
     return '<section class="card stack" style="gap:12px"><div><h2>Bật trợ lý AI</h2><p class="lead">Trợ lý dùng Google Gemini (miễn phí) để giải thích thống kê, phân tích bộ số và trả lời câu hỏi của bạn.</p></div>' +
-      '<ol class="steps"><li>Mở <b>aistudio.google.com</b> bằng Safari, đăng nhập tài khoản Google.</li><li>Bấm <b>Get API key</b>, rồi <b>Create API key</b>.</li><li>Sao chép khóa (bắt đầu bằng AIza…) và dán vào ô dưới.</li></ol>' +
-      '<label class="fld">Khóa Gemini API<input id="ai-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…"></label>' +
+      '<ol class="steps"><li>Mở <b>aistudio.google.com</b> bằng Safari, đăng nhập tài khoản Google.</li><li>Bấm <b>Get API key</b>, rồi <b>Create API key</b>.</li><li>Sao chép khóa và dán vào ô dưới.</li></ol>' +
+      '<label class="fld">Khóa Gemini API<input id="ai-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Dán khóa vào đây"></label>' +
       '<div class="row"><button class="btn primary" data-act="savekey">Lưu khóa</button><span class="small muted" id="key-msg"></span></div>' +
       '<p class="small muted p">Khóa chỉ lưu trên điện thoại này và chỉ được gửi tới Google khi bạn hỏi. Không ai khác thấy được, kể cả trên GitHub.</p></section>';
   }
@@ -775,7 +775,7 @@ function afterAIRender() {
 async function saveKey() {
   const el = document.getElementById("ai-key"), msg = document.getElementById("key-msg");
   const key = (el.value || "").trim();
-  if (!/^[A-Za-z0-9_\-]{20,}$/.test(key)) { msg.textContent = "Khóa không đúng dạng. Hãy dán lại khóa bắt đầu bằng AIza…"; return; }
+  if (!/^[A-Za-z0-9_.\-]{20,}$/.test(key)) { msg.textContent = "Khóa không đúng dạng. Hãy sao chép lại khóa trong AI Studio rồi dán vào đây."; return; }
   msg.textContent = "Đang kiểm tra khóa…";
   try {
     save("aimodel", "");
