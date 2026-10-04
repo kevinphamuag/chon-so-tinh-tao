@@ -1,0 +1,14 @@
+{
+  "name": "Chọn Số Tỉnh Táo",
+  "short_name": "Chọn Số",
+  "description": "Chọn số Vietlott Mega 6/45 và Power 6/55: thống kê, kiểm chứng, xác suất thật và trợ lý AI.",
+  "lang": "vi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EDF0F4",
+  "theme_color": "#1D5FA8",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

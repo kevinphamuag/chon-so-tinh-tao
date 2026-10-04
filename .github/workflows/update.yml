@@ -1,0 +1,60 @@
+name: Cập nhật kết quả và đăng app
+
+on:
+  schedule:
+    - cron: "50 11 * * *"   # 18:50 giờ Việt Nam, ngay sau giờ quay
+    - cron: "20 13 * * *"   # 20:20 giờ Việt Nam, lần thử lại
+    - cron: "40 23 * * *"   # 06:40 sáng hôm sau
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: "Kiểm tra mọi nguồn dữ liệu"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update-and-deploy
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lấy kết quả mới
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python3 scripts/update.py ${{ inputs.probe && '--probe' || '' }}
+      - name: Lưu dữ liệu mới
+        run: |
+          if git diff --quiet -- data; then echo "Không có gì mới."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git commit -m "Cập nhật kết quả $(TZ=Asia/Ho_Chi_Minh date +%d/%m/%Y)"
+          git push
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
