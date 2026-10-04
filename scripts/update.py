@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -31,19 +32,18 @@ GAMES = {
     "645": {"name": "Mega 6/45", "N": 45, "weekdays": {2, 4, 6}, "bonus": False,
             "jsonl": "https://raw.githubusercontent.com/vietvudanh/vietlott-data/master/data/power645.jsonl",
             "pages": ["https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/winning-number-645",
-                      "https://www.minhngoc.net.vn/ket-qua-xo-so/dien-toan-vietlott/mega-6x45.html",
                       "https://xskt.com.vn/xsmega645",
-                      "https://www.minhchinh.com/truc-tiep-xo-so-tu-chon-mega-645.html",
-                      "https://xsmn.mobi/xs-mega-645.html",
-                      "https://www.ketquadientoan.com/"]},
+                      "https://www.minhngoc.net.vn/ket-qua-xo-so/dien-toan-vietlott/mega-6x45.html",
+                      "https://www.ketquadientoan.com/",
+                      "https://www.minhchinh.com/truc-tiep-xo-so-tu-chon-mega-645.html"]},
     "655": {"name": "Power 6/55", "N": 55, "weekdays": {1, 3, 5}, "bonus": True,
             "jsonl": "https://raw.githubusercontent.com/vietvudanh/vietlott-data/master/data/power655.jsonl",
             "pages": ["https://vietlott.vn/vi/trung-thuong/ket-qua-trung-thuong/winning-number-655",
-                      "https://www.minhngoc.net.vn/ket-qua-xo-so/dien-toan-vietlott/power-6x55.html",
                       "https://xskt.com.vn/xspower",
+                      "https://www.minhngoc.net.vn/ket-qua-xo-so/dien-toan-vietlott/power-6x55.html",
+                      "https://www.ketquadientoan.com/",
                       "https://www.minhchinh.com/truc-tiep-xo-so-tu-chon-power-655.html",
-                      "https://xsmn.mobi/xs-power.html",
-                      "https://www.ketquadientoan.com/"]},
+                      "https://xsmn.mobi/xs-power.html"]},
 }
 TRUSTED = {"vietvudanh", "vietlott.vn"}
 REPORT = []  # rows for the run summary
@@ -84,16 +84,17 @@ def is_blocked(status, raw):
 
 
 # ---------- Gemini ----------
-_model = None
+_models = None
 
 
-def gemini_model():
-    global _model
-    if _model:
-        return _model
-    _model = os.environ.get("GEMINI_MODEL", "").strip()
-    if _model:
-        return _model
+def gemini_models():
+    global _models
+    if _models is not None:
+        return _models
+    env = os.environ.get("GEMINI_MODEL", "").strip()
+    if env:
+        _models = [env]
+        return _models
     st, body = fetch(GEMINI + "models?pageSize=200", headers={"x-goog-api-key": KEY})
     if st != 200:
         raise RuntimeError("Gemini models list failed: %s %s" % (st, body[:200]))
@@ -105,20 +106,46 @@ def gemini_model():
         return float(m.group(1)) if m else -1
 
     ranked = sorted([n for n in names if score(n) >= 0], key=score, reverse=True)
-    bad = re.compile(r"image|tts|audio|live|embedding|exp|preview|lite")
-    _model = (ranked or [n for n in names if "flash" in n and not bad.search(n)] or names)[0]
-    log("Gemini model:", _model)
-    return _model
+    bad = re.compile(r"image|tts|audio|live|embedding|exp|preview")
+    rest = [n for n in names if "flash" in n and not bad.search(n) and n not in ranked]
+    _models = (ranked + rest)[:4] or names[:1]
+    log("Gemini models:", _models)
+    return _models
+
+
+_last_call = [0.0]
 
 
 def gemini(prompt, search=False):
+    """Call Gemini with pacing, retries on overload/rate limit, and model fallback."""
+    err = None
+    for model in gemini_models():
+        for attempt in range(3):
+            wait = 7 - (time.time() - _last_call[0])
+            if wait > 0:
+                time.sleep(wait)
+            _last_call[0] = time.time()
+            try:
+                return gemini_once(model, prompt, search)
+            except RuntimeError as e:
+                err = e
+                code = str(e)[7:10]
+                if code not in ("429", "503", "500"):
+                    raise
+                if code == "429" and search:
+                    raise  # search grounding quota: retrying will not help this run
+                time.sleep(15 * (attempt + 1))
+    raise err
+
+
+def gemini_once(model, prompt, search):
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0}}
     if search:
         body["tools"] = [{"google_search": {}}]
     else:
         body["generationConfig"]["responseMimeType"] = "application/json"
-    st, out = fetch(GEMINI + "models/%s:generateContent" % gemini_model(), data=json.dumps(body).encode(),
+    st, out = fetch(GEMINI + "models/%s:generateContent" % model, data=json.dumps(body).encode(),
                     headers={"Content-Type": "application/json", "x-goog-api-key": KEY}, timeout=120)
     if st != 200:
         raise RuntimeError("Gemini %s: %s" % (st, out[:300]))
@@ -226,7 +253,15 @@ def main():
         REPORT.append((G["name"], "github vietvudanh", st, len(body), "", got))
 
         # 2) result pages read by Gemini
-        need = lambda: [i for i in range(last_id + 1, last_id + 1 + len(exp)) if not any(c[5] in TRUSTED for c in cands.get(i, []))]
+        def confirmed(i):
+            groups = {}
+            for c in cands.get(i, []):
+                if c[5] in TRUSTED:
+                    return True
+                groups.setdefault(c[1:4], set()).add(c[5])
+            return any(len(v) >= 2 for v in groups.values())
+
+        need = lambda: [i for i in range(last_id + 1, last_id + 1 + len(exp)) if not confirmed(i)]
         if need() or probe:
             for url in G["pages"]:
                 st, raw = fetch(url)
@@ -234,7 +269,7 @@ def main():
                 text = "" if blocked else page_text(raw)
                 note = "bị chặn" if blocked else ""
                 got = 0
-                if not blocked and KEY and (need() or probe):
+                if not blocked and KEY and need():
                     try:
                         items = gemini(EXTRACT.format(url=url, name=G["name"], text=text[:60000],
                                                       bonus="số đặc biệt (số nguyên)" if G["bonus"] else "null",
@@ -243,6 +278,8 @@ def main():
                         got = sum(1 for it in items if isinstance(it, dict) and add(it, host))
                     except Exception as e:
                         note = "lỗi Gemini: %s" % str(e)[:80]
+                elif not blocked and KEY:
+                    note = "không cần đọc"
                 elif not blocked and not KEY:
                     note = "chưa có GEMINI_API_KEY"
                 REPORT.append((G["name"], url, st, len(raw), note, got))
