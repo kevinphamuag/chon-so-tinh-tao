@@ -257,7 +257,7 @@ const S = {
   count: Number(load("count", "3")) || 3,
   extra: { "645": [], "655": [] }, meta: null,
   generated: [], picks: [], tickets: [], ticketsReady: false, confirmDel: null,
-  adminOpen: false, aiKey: load("aikey", ""), chat: [], aiBusy: false, aiDraft: "",
+  smsText: "", adminOpen: false, aiKey: load("aikey", ""), chat: [], aiBusy: false, aiDraft: "",
   calc: { k: 1, m: 52, j: "" }, sel: null
 };
 if (!GAMES[S.game]) S.game = "645";
@@ -631,36 +631,36 @@ function targetFor(g, savedAt) {
 }
 function viewTickets() {
   if (!S.tickets.length) {
-    return '<section class="card stack" style="gap:10px"><h2>Chưa có vé nào</h2><p class="lead">Vào mục Chọn số, tạo bộ số rồi bấm “Lưu vé”. App sẽ tự dò kết quả khi có kỳ quay mới.</p><div><button class="btn primary" data-tab-go="pick">Đi tới Chọn số</button></div>' + storageNote() + "</section>";
+    return smsCard() + '<section class="card stack" style="gap:10px"><h2>Chưa có vé nào</h2><p class="lead">Dán tin nhắn mua vé ở trên, hoặc vào mục Chọn số rồi bấm “Lưu vé”. App sẽ tự dò kết quả khi có kỳ quay mới.</p><div><button class="btn" data-tab-go="pick">Đi tới Chọn số</button></div>' + storageNote() + "</section>";
   }
-  let h = '<section class="card"><div class="row between" style="margin-bottom:6px"><h2>Vé đã lưu</h2><span class="small muted">' + S.tickets.length + " vé</span></div>";
+  let h = smsCard() + '<section class="card"><div class="row between" style="margin-bottom:6px"><h2>Vé đã lưu</h2><span class="small muted">' + S.tickets.length + " vé</span></div>";
   for (const t of S.tickets) {
     const D = draws(t.g), d = D.find(x => x.date === t.target), G = GAMES[t.g];
     let status, chip, nums;
     if (d) {
-      const pz = prizeFor(t.g, t.n, d);
+      const pz = checkTicket(t.g, t.n, d);
       nums = t.n.map(n => ball(n, d.n.includes(n) ? "sm" : "sm miss")).join("");
       status = "Kỳ #" + d.id + " (" + dmy(d.date) + "): trùng " + pz.m + " số" + (pz.name === "Jackpot 2" ? " + số đặc biệt" : "");
-      chip = pz.name ? '<span class="chip good">' + pz.name + (pz.jackpot ? "" : " · " + money(pz.value)) + "</span>" : '<span class="chip neutral">Không trúng</span>';
+      chip = pz.name ? '<span class="chip good">' + esc(pz.name) + (pz.jackpot ? "" : " · " + money(pz.value)) + "</span>" : '<span class="chip neutral">Không trúng</span>';
     } else {
       nums = t.n.map(n => ball(n, "sm")).join("");
       const past = t.target < isoOf(vnNow());
-      status = (past ? "Chưa có kết quả kỳ " : "Chờ quay: ") + dowOf(t.target) + " " + dmy(t.target);
+      status = (past ? "Chưa có kết quả kỳ " : "Chờ quay: ") + (t.ky ? "#" + pad(t.ky).padStart(5, "0") + " " : "") + dowOf(t.target) + " " + dmy(t.target);
       chip = '<span class="chip neutral">' + (past ? "Đang chờ dữ liệu" : "Chưa quay") + "</span>";
     }
-    const best = bestEver(t.g, t.n);
+    const best = t.n.length <= 8 ? bestEver(t.g, t.n) : null;
     h += '<div class="ticket" style="align-items:flex-start"><div class="stack" style="gap:6px;min-width:0">' +
       '<div class="row" style="gap:8px"><span class="chip" style="background:var(--' + (t.g === "645" ? "mega" : "power") + '-soft);color:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + G.name + "</span>" + chip + "</div>" +
       '<div class="balls" style="--game:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + nums + "</div>" +
-      '<div class="small muted">' + status + "</div>" +
-      '<div class="small muted">Nếu mua bộ này ở mọi kỳ trước đây: trùng nhiều nhất ' + best.m + " số" + (best.d ? " (kỳ #" + best.d.id + ")" : "") + ", trúng giải " + best.wins + " lần.</div></div>" +
+      '<div class="small muted">' + status + (t.n.length > 6 ? " · Bao " + t.n.length + " (" + comb(t.n.length, 6) + " bộ)" : "") + (t.src === "sms" ? " · từ tin nhắn" : "") + "</div>" +
+      (best ? '<div class="small muted">Nếu mua bộ này ở mọi kỳ trước đây: trùng nhiều nhất ' + best.m + " số" + (best.d ? " (kỳ #" + best.d.id + ")" : "") + ", trúng giải " + best.wins + " lần.</div>" : "") + "</div>" +
       '<button class="btn sm ' + (S.confirmDel === t.id ? "danger" : "ghost") + '" data-del="' + esc(t.id) + '">' + (S.confirmDel === t.id ? "Bấm lần nữa để xóa" : "Xóa") + "</button></div>";
   }
   return h + storageNote() + "</section>";
 }
 function bestEver(g, nums) {
   let m = 0, d = null, wins = 0;
-  for (const x of draws(g)) { const pz = prizeFor(g, nums, x); if (pz.value) wins++; if (pz.m > m) { m = pz.m; d = x; } }
+  for (const x of draws(g)) { const pz = checkTicket(g, nums, x); if (pz.value) wins++; if (pz.m > m) { m = pz.m; d = x; } }
   return { m, d, wins };
 }
 function storageNote() {
@@ -708,6 +708,111 @@ function updateCalc() {
       "Nhưng gần như toàn bộ con số đó nằm ở jackpot, thứ bạn chỉ có " + oneIn(1 / G.total) + " cơ hội trúng. Không tính jackpot, mỗi vé chỉ thu về trung bình <b>" + money(nonJ) + "</b>. " +
       "Jackpot càng to càng nhiều người mua, nên khả năng phải chia giải tăng: đây là lúc nên chọn bộ ít người chọn. ") +
     "Đã trừ thuế thu nhập 10% trên phần giải thưởng vượt 10 triệu.";
+}
+
+/* ---------- Tickets from Vietlott SMS (9969) ---------- */
+function combos(arr, k) {
+  const out = [], cur = [];
+  (function go(i) {
+    if (cur.length === k) { out.push(cur.slice()); return; }
+    for (let j = i; j <= arr.length - (k - cur.length); j++) { cur.push(arr[j]); go(j + 1); cur.pop(); }
+  })(0);
+  return out;
+}
+function checkTicket(g, nums, d) {
+  if (nums.length === 6) return prizeFor(g, nums, d);
+  const m = nums.filter(x => d.n.includes(x)).length, count = {};
+  let value = 0, jackpot = false;
+  for (const c of combos(nums, 6)) {
+    const p = prizeFor(g, c, d);
+    if (p.value) { value += p.value; count[p.name] = (count[p.name] || 0) + 1; if (p.jackpot) jackpot = true; }
+  }
+  const names = Object.keys(count);
+  return { m, value, jackpot, name: names.length ? names.map(n => (count[n] > 1 ? count[n] + "× " : "") + n).join(", ") : null };
+}
+function drawDateFor(g, ky) {
+  const D = draws(g), hit = D.find(d => d.id === ky);
+  if (hit) return hit.date;
+  const last = D[D.length - 1];
+  if (!last || ky <= last.id || ky - last.id > 30) return null;
+  const [y, m, d] = last.date.split("-").map(Number);
+  let dt = new Date(y, m - 1, d, 12), left = ky - last.id;
+  while (left > 0) { dt = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + 1, 12); if (GAMES[g].days.includes(dt.getDay())) left--; }
+  return isoOf(dt);
+}
+function gameOf(text) {
+  const t = text.replace(/\s+/g, " ");
+  if (/SP\s*:?\s*(645|Mega)|Mega\s*6\s*\/\s*45/i.test(t)) return "645";
+  if (/SP\s*:?\s*(655|Power)|Power\s*6\s*\/\s*55/i.test(t)) return "655";
+  const m = t.match(/(?:^|\s)(645|655)(?=\s|,|$)/);
+  return m ? m[1] : null;
+}
+function parseSMS(text) {
+  const clean = String(text || "").replace(/\r/g, "").replace(/[ \t]*-[ \t]*\n[ \t]*|\n[ \t]*-[ \t]*/g, "-").replace(/#\s*\n\s*|\n\s*#/g, "#");
+  const parts = clean.split(/(?=Yeu cau dat ve|Yêu cầu đặt vé|\(VE\)|(?:^|\n)\s*(?:645|655)\s+[A-Z]\s+\d)/i).filter(s => s.trim());
+  const found = [], seen = new Set();
+  for (const part of parts) {
+    const g = gameOf(part);
+    if (!g) continue;
+    const N = GAMES[g].N;
+    let ky = null, date = null, code = null;
+    let m = part.match(/ky\s*QSMT\s*:?\s*0*(\d{1,6})/i) || part.match(/(?:^|\s)(?:645|655)\s+[A-Z]\s+0*(\d{3,6})\b/i) || part.match(/\bky\s*:?\s*#?0*(\d{3,6})\b/i);
+    if (m) ky = Number(m[1]);
+    m = part.match(/ngay\s*MT\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i) || part.match(/ngày\s*mở\s*thưởng\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    if (m) date = m[3] + "-" + pad(Number(m[2])) + "-" + pad(Number(m[1]));
+    m = part.match(/MaVe\s*:?\s*([A-Z0-9]{8,})/i);
+    if (m) code = m[1];
+    let groups = [];
+    m = part.match(/(?:bo\s*so|BSDT|bộ\s*số)\s*:?\s*([\d\-#\s]+)/i);
+    if (m) groups = m[1].split("#").map(s => (s.match(/\d{1,2}/g) || []).map(Number));
+    if (!groups.length) {
+      const re = /\bS\s+((?:\d{1,2}[\s,.\-]+){5,}\d{1,2})\b/g;
+      let x; while ((x = re.exec(part))) groups.push(x[1].match(/\d{1,2}/g).map(Number));
+    }
+    if (!groups.length) {
+      const re = /(?:^|[^\d])((?:\d{1,2}[\-\s]){5,}\d{1,2})(?![\d])/g;
+      let x; while ((x = re.exec(part))) groups.push(x[1].match(/\d{1,2}/g).map(Number));
+    }
+    if (!date && ky) date = drawDateFor(g, ky);
+    for (const raw of groups) {
+      const n = [...new Set(raw)].sort((a, b) => a - b);
+      if (n.length < 6 || n.length > 18 || n.length !== raw.length || !n.every(v => v >= 1 && v <= N)) continue;
+      const key = g + "|" + (date || ky || "") + "|" + n.join(",");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({ g, n, ky, target: date || isoOf(nextDraw(g)), code, guessed: !date });
+    }
+  }
+  return found;
+}
+function ticketKey(t) { return t.g + "|" + t.target + "|" + [...t.n].sort((a, b) => a - b).join(","); }
+function importTickets(list) {
+  const have = new Set(S.tickets.map(ticketKey));
+  const now = new Date().toISOString();
+  const fresh = list.filter(t => !have.has(ticketKey(t))).map((t, i) => ({
+    id: "t" + Date.now().toString(36) + i + rnd(1e6).toString(36), g: t.g, n: t.n, savedAt: now, target: t.target,
+    ky: t.ky || undefined, code: t.code || undefined, src: "sms"
+  }));
+  if (fresh.length) { S.tickets = fresh.concat(S.tickets); setLocalTickets(S.tickets); }
+  return { added: fresh.length, dup: list.length - fresh.length };
+}
+function smsPreview() {
+  const list = parseSMS(S.smsText);
+  if (!S.smsText.trim()) return "";
+  if (!list.length) return '<p class="small p" style="color:var(--power)">Không nhận ra vé nào. Hãy dán nguyên tin nhắn xác nhận từ 9969 (có “bo so” hoặc “BSDT” và “ky QSMT”).</p>';
+  const have = new Set(S.tickets.map(ticketKey));
+  return '<div class="stack" style="gap:8px">' + list.map(t => {
+    const dup = have.has(ticketKey(t)), price = comb(t.n.length, 6) * PRICE;
+    return '<div class="row between" style="gap:8px"><div class="balls" style="--game:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + t.n.map(n => ball(n, "sm")).join("") + "</div>" +
+      '<span class="small muted">' + GAMES[t.g].name + (t.n.length > 6 ? " · Bao " + t.n.length : "") + (t.ky ? " · #" + pad(t.ky).padStart(5, "0") : "") + " · " + dmy(t.target) + (t.guessed ? " (dự đoán)" : "") + " · " + money(price) + (dup ? " · đã có" : "") + "</span></div>";
+  }).join("") + "</div>";
+}
+function smsCard() {
+  return '<section class="card stack" style="gap:10px"><div><h2>Thêm vé từ tin nhắn</h2><p class="lead">Sao chép tin nhắn xác nhận từ 9969 (hoặc tin bạn gửi đi), rồi dán vào đây. App tự nhận loại vé, kỳ quay và bộ số.</p></div>' +
+    '<textarea id="sms-input" rows="3" style="width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;color:var(--ink);resize:vertical" placeholder="Dán tin nhắn vào đây">' + esc(S.smsText) + "</textarea>" +
+    '<div id="sms-preview">' + smsPreview() + "</div>" +
+    '<div class="row"><button class="btn" data-act="smspaste">Dán</button><button class="btn primary" data-act="smssave"' + (parseSMS(S.smsText).length ? "" : " disabled") + ">Lưu vé</button>" +
+    (S.smsText ? '<button class="btn ghost" data-act="smsclear">Xóa</button>' : "") + "</div></section>";
 }
 
 /* ---------- Tickets storage ---------- */
@@ -890,6 +995,19 @@ document.addEventListener("click", e => {
   if (act === "gen") { S.generated = generate(S.game, S.count); S.justGen = true; render(); S.justGen = false; }
   else if (act === "clear") { S.picks = []; render(); }
   else if (act === "savekey") saveKey();
+  else if (act === "smssave") {
+    const r = importTickets(parseSMS(S.smsText));
+    S.smsText = ""; render();
+    toast(r.added ? "Đã lưu " + r.added + " vé" + (r.dup ? ", bỏ qua " + r.dup + " vé trùng" : "") : "Các vé này đã có rồi");
+  }
+  else if (act === "smsclear") { S.smsText = ""; render(); }
+  else if (act === "smspaste") {
+    (async () => {
+      try { const t = await navigator.clipboard.readText(); if (t) { S.smsText = t; render(); return; } } catch (e) {}
+      const ta = document.getElementById("sms-input"); if (ta) ta.focus();
+      toast("Chạm giữ vào ô trống rồi chọn Dán");
+    })();
+  }
   else if (act === "forgetkey") { S.aiKey = ""; save("aikey", ""); save("aimodel", ""); S.chat = []; render(); }
   else if (act === "clearchat") { S.chat = []; render(); }
   else if (act === "send") { const ta = document.getElementById("ai-input"); if (ta && ta.value.trim()) askAI(ta.value.trim()); }
@@ -901,6 +1019,12 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("input", e => {
   const id = e.target.id;
+  if (id === "sms-input") {
+    S.smsText = e.target.value;
+    document.getElementById("sms-preview").innerHTML = smsPreview();
+    const btn = document.querySelector('[data-act="smssave"]'); if (btn) btn.disabled = !parseSMS(S.smsText).length;
+    return;
+  }
   if (id === "ai-input") { S.aiDraft = e.target.value; e.target.style.height = "auto"; e.target.style.height = Math.min(140, e.target.scrollHeight) + "px"; return; }
   if (id === "c-k") S.calc.k = e.target.value;
   else if (id === "c-m") S.calc.m = e.target.value;
@@ -949,7 +1073,19 @@ async function start() {
     document.getElementById("latest").innerHTML = '<p class="p">Không tải được dữ liệu. Kiểm tra mạng rồi mở lại app.</p>';
     return;
   }
-  invalidate(); render();
+  invalidate();
+  try {
+    const q = new URLSearchParams(location.search).get("sms");
+    if (q) {
+      history.replaceState(null, "", location.pathname);
+      S.tab = "tickets";
+      const r = importTickets(parseSMS(q));
+      render();
+      toast(r.added ? "Đã tự thêm " + r.added + " vé từ tin nhắn" : (parseSMS(q).length ? "Vé này đã có rồi" : "Không nhận ra vé trong tin nhắn"));
+      return;
+    }
+  } catch (e) {}
+  render();
 }
 start();
 })();
