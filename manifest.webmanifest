@@ -5,7 +5,7 @@
   "lang": "vi",
   "start_url": "./",
   "scope": "./",
-  "display": "standalone",
+  "display": "browser",
   "background_color": "#EDF0F4",
   "theme_color": "#1D5FA8",
   "icons": [
