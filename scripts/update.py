@@ -164,7 +164,7 @@ def gemini_once(model, prompt, search):
 EXTRACT = """Dưới đây là văn bản lấy từ trang web {url}.
 Liệt kê TẤT CẢ các kỳ quay xổ số {name} xuất hiện trong văn bản mà có ghi rõ đủ các số trúng thưởng.
 Trả về một mảng JSON, mỗi phần tử có dạng:
-{{"id": số kỳ quay (số nguyên, ví dụ 1570), "date": "YYYY-MM-DD", "numbers": [6 số chính], "bonus": {bonus}, "jackpot": giá trị giải Jackpot{j1} của kỳ đó tính bằng đồng (số nguyên) nếu văn bản có ghi, nếu không thì null}}
+{{"id": số kỳ quay (số nguyên, ví dụ 1570), "date": "YYYY-MM-DD", "numbers": [6 số chính], "bonus": {bonus}, "jackpot": giá trị giải Jackpot{j1} của kỳ đó tính bằng đồng (số nguyên) nếu văn bản có ghi, nếu không thì null, "jackpot_winners": số vé trúng giải Jackpot{j1} của kỳ đó (0 nếu văn bản ghi rõ không có người trúng hoặc "vô chủ"; null nếu không ghi), "jackpot2_winners": {j2w}}}
 Chỉ chép đúng những gì văn bản ghi, không suy đoán. Nếu không có kỳ nào, trả về [].
 
 VĂN BẢN:
@@ -174,7 +174,7 @@ VĂN BẢN:
 
 SEARCH = """Tìm trên Google kết quả xổ số Vietlott {name} kỳ quay #{id:05d} (dự kiến ngày {date}).
 Trả lời CHỈ bằng một đối tượng JSON, không thêm chữ nào khác:
-{{"id": {id}, "date": "YYYY-MM-DD", "numbers": [6 số chính], "bonus": {bonus}, "jackpot": giá trị Jackpot{j1} của kỳ đó tính bằng đồng hoặc null}}
+{{"id": {id}, "date": "YYYY-MM-DD", "numbers": [6 số chính], "bonus": {bonus}, "jackpot": giá trị Jackpot{j1} của kỳ đó tính bằng đồng hoặc null, "jackpot_winners": số vé trúng Jackpot{j1} (0 nếu không ai trúng, null nếu không rõ), "jackpot2_winners": {j2w}}}
 Nếu không tìm thấy kết quả chính xác của đúng kỳ này, trả lời: null"""
 
 
@@ -201,7 +201,26 @@ def norm(g, item, source):
         b = None
     if j is not None and not (1e9 <= j <= 1e13):
         j = None
-    return (i, d.isoformat(), tuple(nums), b, j, source)
+
+    def count(v):
+        try:
+            v = int(v) if v not in (None, "", "null") else None
+        except (TypeError, ValueError):
+            return None
+        return v if v is not None and 0 <= v <= 1000 else None
+
+    return (i, d.isoformat(), tuple(nums), b, j, source, count(item.get("jackpot_winners")),
+            count(item.get("jackpot2_winners")) if G["bonus"] else None)
+
+
+def fmt_args(G):
+    return {"bonus": "số đặc biệt (số nguyên)" if G["bonus"] else "null", "j1": " 1" if G["bonus"] else "",
+            "j2w": "số vé trúng Jackpot 2 (0 nếu không ai trúng, null nếu không ghi)" if G["bonus"] else "null"}
+
+
+def most_common(vals):
+    vals = [v for v in vals if v is not None]
+    return max(set(vals), key=vals.count) if vals else None
 
 
 def expected_dates(g, last_date):
@@ -215,6 +234,50 @@ def expected_dates(g, last_date):
     return out
 
 
+def update_info(g, G, rows, cands, meta):
+    """Record jackpot amount and winner counts of the newest draw in meta['info']."""
+    changed = False
+    # jackpot amount and winners of the newest draw
+    latest = rows[-1]
+    key = (latest[1], tuple(latest[2:8]), latest[8] if G["bonus"] else None)
+    info_all = meta.setdefault("info", {})
+    prev = info_all.get(g) or {}
+    match = [c for c in cands.get(latest[0], []) if c[1:4] == key]
+    if not match and KEY and prev.get("id") != latest[0]:
+        for url in G["pages"]:
+            st, raw = fetch(url)
+            if is_blocked(st, raw):
+                continue
+            try:
+                items = gemini(EXTRACT.format(url=url, name=G["name"], text=page_text(raw)[:60000], **fmt_args(G)))
+            except Exception as e:
+                REPORT.append((G["name"], url + " (jackpot)", st, len(raw), "lỗi Gemini: %s" % str(e)[:80], 0))
+                break
+            match = [n for n in (norm(g, it, url) for it in items if isinstance(it, dict)) if n and n[0] == latest[0] and n[1:4] == key]
+            REPORT.append((G["name"], url + " (jackpot)", st, len(raw), "", len(match)))
+            if match:
+                break
+    if match:
+        j, w1, w2 = most_common([c[4] for c in match]), most_common([c[6] for c in match]), most_common([c[7] for c in match])
+        old_j = meta.get("jackpot" + g)
+        if w1 is None and j and prev.get("jackpot") and prev.get("id") == latest[0] - 1 and j > prev["jackpot"] * 1.001:
+            w1 = 0  # jackpot kept growing from the previous draw: nobody won it
+        info = {"id": latest[0], "date": latest[1], "jackpot": j or old_j, "winners": w1}
+        if G["bonus"]:
+            info["winners2"] = w2
+        if info != prev:
+            info_all[g] = info
+            changed = True
+            log("  Kỳ #%d: jackpot %s đ, số vé trúng jackpot: %s%s" % (latest[0], format(info["jackpot"] or 0, ","), w1,
+                                                                    ", jackpot 2: %s" % w2 if G["bonus"] else ""))
+        if j and old_j != j:
+            meta["jackpot" + g] = j
+            meta["jackpotAt"] = latest[1]
+            changed = True
+
+    return changed
+
+
 def main():
     probe = "--probe" in sys.argv
     draws = json.load(open(DRAWS))
@@ -226,9 +289,10 @@ def main():
         last_id, last_date = rows[-1][0], rows[-1][1]
         exp = expected_dates(g, last_date)
         log("\n== %s: có đến kỳ #%d (%s); đang thiếu %d kỳ: %s" % (G["name"], last_id, last_date, len(exp), exp))
-        if not exp and not probe:
-            continue
         cands = {}  # id -> list of normalized candidates
+        if not exp and not probe:
+            changed = update_info(g, G, rows, cands, meta) or changed
+            continue
 
         def add(item, source):
             n = norm(g, item, source)
@@ -271,9 +335,7 @@ def main():
                 got = 0
                 if not blocked and KEY and need():
                     try:
-                        items = gemini(EXTRACT.format(url=url, name=G["name"], text=text[:60000],
-                                                      bonus="số đặc biệt (số nguyên)" if G["bonus"] else "null",
-                                                      j1=" 1" if G["bonus"] else ""))
+                        items = gemini(EXTRACT.format(url=url, name=G["name"], text=text[:60000], **fmt_args(G)))
                         host = urllib.parse.urlparse(url).netloc.replace("www.", "")
                         got = sum(1 for it in items if isinstance(it, dict) and add(it, host))
                     except Exception as e:
@@ -293,9 +355,7 @@ def main():
                 if any(c[5] in TRUSTED for c in cands.get(i, [])) or any(len(s) >= 2 for s in groups.values()):
                     continue
                 try:
-                    items = gemini(SEARCH.format(name=G["name"], id=i, date=exp[k],
-                                                 bonus="số đặc biệt (số nguyên)" if G["bonus"] else "null",
-                                                 j1=" 1" if G["bonus"] else ""), search=True)
+                    items = gemini(SEARCH.format(name=G["name"], id=i, date=exp[k], **fmt_args(G)), search=True)
                     got = sum(1 for it in items if isinstance(it, dict) and add(it, "google-search"))
                     REPORT.append((G["name"], "Gemini + Google Search #%d" % i, 200, 0, "", got))
                 except Exception as e:
@@ -325,16 +385,7 @@ def main():
                                                     ", ".join(sorted(groups.get(pick, set())))))
             nxt += 1
 
-        # jackpot of the newest draw we know about
-        jid = newest or rows[-1][0]
-        vals = [c[4] for c in cands.get(jid, []) if c[4] and c[1:4] == tuple([rows[-1][1], tuple(rows[-1][2:8]), rows[-1][8] if G["bonus"] else None])]
-        if vals:
-            best = max(set(vals), key=vals.count)
-            if meta.get("jackpot" + g) != best:
-                meta["jackpot" + g] = best
-                meta["jackpotAt"] = rows[-1][1]
-                changed = True
-                log("  Jackpot %s: %s đ" % (G["name"], format(best, ",")))
+        changed = update_info(g, G, rows, cands, meta) or changed
 
     if changed:
         meta["updatedAt"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

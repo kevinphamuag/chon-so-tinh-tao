@@ -280,7 +280,15 @@ function money(v) {
   if (v >= 1e6) return (v / 1e6).toLocaleString("vi-VN", { maximumFractionDigits: 1 }) + " triệu";
   return fmt(v) + " đ";
 }
-function currentJ(g) { const v = S.meta && Number(S.meta["jackpot" + g]); return v > 0 ? v : 0; }
+function drawInfo(g) {
+  const inf = S.meta && S.meta.info && S.meta.info[g], D = draws(g), last = D[D.length - 1];
+  return inf && last && inf.id === last.id ? inf : null;
+}
+function currentJ(g) {
+  const inf = drawInfo(g);
+  if (inf && inf.winners > 0) return GAMES[g].minJ;  // won: next draw restarts from the minimum
+  const v = S.meta && Number(S.meta["jackpot" + g]); return v > 0 ? v : 0;
+}
 function oneIn(p) { return p <= 0 ? "—" : "1 trên " + fmt(1 / p); }
 function pct(p, digits) {
   if (p === 0) return "0%";
@@ -492,8 +500,16 @@ function renderLatest() {
   const stale = pd && last.date < isoOf(pd) && (vnNow() - pd) > 15 * 3600e3;
   let h = '<div class="row between"><div class="meta">Kỳ quay mới nhất · <b class="num">#' + pad(last.id).padStart(5, "0") + "</b> · " + dowOf(last.date) + " " + dmy(last.date) + "</div></div>";
   h += '<div class="balls" style="margin-top:8px">' + last.n.map(n => ball(n)).join("") + (last.b ? '<span class="plus">+</span>' + ball(last.b, "bonus") : "") + "</div>";
-  const cj = currentJ(g);
-  if (cj) h += '<div class="meta" style="margin-top:10px">Jackpot' + (g === "655" ? " 1" : "") + ' hiện tại: <b class="num">' + fmt(cj) + " đ</b></div>";
+  const cj = currentJ(g), inf = drawInfo(g), jn = "Jackpot" + (g === "655" ? " 1" : "");
+  if (inf && inf.winners > 0) {
+    h += '<div class="row" style="margin-top:10px;gap:8px"><span class="chip good">' + inf.winners + " vé trúng " + jn + "</span>" +
+      '<span class="meta">trị giá <b class="num">' + fmt(inf.jackpot) + " đ</b></span></div>" +
+      '<div class="meta" style="margin-top:4px">Kỳ tới ' + jn + " quay lại từ khoảng " + money(GAMES[g].minJ) + ".</div>";
+  } else if (inf && inf.winners === 0) {
+    h += '<div class="row" style="margin-top:10px;gap:8px"><span class="chip neutral">Không ai trúng ' + jn + "</span>" +
+      '<span class="meta"><b class="num">' + fmt(inf.jackpot) + " đ</b> cộng dồn sang kỳ tới</span></div>";
+  } else if (cj) h += '<div class="meta" style="margin-top:10px">' + jn + ' hiện tại: <b class="num">' + fmt(cj) + " đ</b></div>";
+  if (inf && g === "655" && inf.winners2 != null) h += '<div class="meta" style="margin-top:4px">Jackpot 2: ' + (inf.winners2 > 0 ? "<b>" + inf.winners2 + " vé trúng</b>" : "không ai trúng") + "</div>";
   h += '<div class="meta" style="margin-top:' + (cj ? 4 : 10) + 'px">Kỳ tới: <b>' + DOW[nd.getDay()] + " " + pad(nd.getDate()) + "/" + pad(nd.getMonth() + 1) + "</b> lúc 18:00 · Dữ liệu " + fmt(D.length) + " kỳ";
   if (S.meta && S.meta.updatedAt) h += " · cập nhật " + esc(new Date(S.meta.updatedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }));
   h += "</div>";
@@ -910,6 +926,7 @@ function aiContext(fresh) {
     lich_quay: g === "645" ? "Thứ Tư, Thứ Sáu, Chủ nhật 18:00" : "Thứ Ba, Thứ Năm, Thứ Bảy 18:00",
     ky_toi: isoOf(nextDraw(g)),
     jackpot_hien_tai: J,
+    ky_gan_nhat_co_nguoi_trung_jackpot: drawInfo(g) ? (drawInfo(g).winners == null ? "chưa rõ" : drawInfo(g).winners > 0 ? drawInfo(g).winners + " vé trúng" : "không ai trúng") : "chưa rõ",
     co_cau_giai: G.prizes.map(p => ({ giai: p.name, dieu_kien: p.cond, gia_tri: p.jackpot ? "jackpot " + J : p.value, xac_suat: "1/" + Math.round(G.total / p.ways) })),
     gia_tri_ky_vong_moi_ve_sau_thue: Math.round(ev(g, J, true)),
     gia_tri_ky_vong_khong_tinh_jackpot: Math.round(nonJackpotEV(g, true)),
