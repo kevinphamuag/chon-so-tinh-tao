@@ -107,8 +107,11 @@ def gemini_models():
 
     ranked = sorted([n for n in names if score(n) >= 0], key=score, reverse=True)
     bad = re.compile(r"image|tts|audio|live|embedding|exp|preview")
-    rest = [n for n in names if "flash" in n and not bad.search(n) and n not in ranked]
-    _models = (ranked + rest)[:4] or names[:1]
+    lite = sorted([n for n in names if re.match(r"^gemini-\d+(\.\d+)?-flash-lite(-latest)?$", n)],
+                  key=lambda n: float(re.findall(r"\d+(?:\.\d+)?", n)[0]), reverse=True)
+    rest = [n for n in names if "flash" in n and not bad.search(n) and n not in ranked + lite]
+    order = ranked[:1] + lite[:1] + ranked[1:2] + rest
+    _models = order[:4] or names[:1]
     log("Gemini models:", _models)
     return _models
 
@@ -124,7 +127,7 @@ def gemini(prompt, search=False):
     if _gemini_down[0] or time.time() > DEADLINE:
         raise RuntimeError("Gemini bỏ qua lần này (quá tải hoặc hết giờ)")
     err = None
-    for model in gemini_models()[:2]:
+    for model in gemini_models()[:3]:
         for attempt in range(2):
             wait = 7 - (time.time() - _last_call[0])
             if wait > 0:
@@ -339,6 +342,15 @@ def main():
                 st, raw = fetch(url)
                 blocked = is_blocked(st, raw)
                 text = "" if blocked else page_text(raw)
+                if probe and text:
+                    for i in (last_id, last_id - 1):
+                        k = text.find("%05d" % i)
+                        k = k if k >= 0 else text.find(str(i))
+                        if k >= 0:
+                            log("---- %s quanh kỳ %d ----\n%s\n----" % (url, i, text[max(0, k - 300):k + 900]))
+                            break
+                    else:
+                        log("---- %s: không thấy số kỳ; đầu trang ----\n%s\n----" % (url, text[:1200]))
                 note = "bị chặn" if blocked else ""
                 got = 0
                 if not blocked and KEY and need():
