@@ -114,13 +114,18 @@ def gemini_models():
 
 
 _last_call = [0.0]
+_gemini_down = [False]
+DEADLINE = time.time() + 10 * 60  # stay well inside the 15-minute job limit
 
 
 def gemini(prompt, search=False):
-    """Call Gemini with pacing, retries on overload/rate limit, and model fallback."""
+    """Call Gemini with pacing, a few retries on overload/rate limit, and model fallback.
+    After one call fails all retries, skip Gemini for the rest of this run."""
+    if _gemini_down[0] or time.time() > DEADLINE:
+        raise RuntimeError("Gemini bỏ qua lần này (quá tải hoặc hết giờ)")
     err = None
-    for model in gemini_models():
-        for attempt in range(3):
+    for model in gemini_models()[:2]:
+        for attempt in range(2):
             wait = 7 - (time.time() - _last_call[0])
             if wait > 0:
                 time.sleep(wait)
@@ -134,7 +139,10 @@ def gemini(prompt, search=False):
                     raise
                 if code == "429" and search:
                     raise  # search grounding quota: retrying will not help this run
-                time.sleep(15 * (attempt + 1))
+                if time.time() > DEADLINE:
+                    break
+                time.sleep(20)
+    _gemini_down[0] = True
     raise err
 
 
