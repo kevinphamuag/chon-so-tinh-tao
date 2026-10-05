@@ -102,6 +102,7 @@ button { cursor: pointer; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); }
 .chip.bad { background: var(--power-soft); color: var(--power); }
 .chip.neutral { background: var(--surface-2); color: var(--muted); }
+.chip.bought { background: var(--good); color: var(--bg); font-size: 14px; font-weight: 700; padding: 4px 12px; }
 
 .note { background: var(--gold-soft); color: var(--gold-ink); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; }
 .note b { font-weight: 700; }
@@ -703,9 +704,10 @@ function viewTickets() {
     }
     const best = t.n.length <= 8 ? bestEver(t.g, t.n) : null;
     h += '<div class="ticket" style="align-items:flex-start"><div class="stack" style="gap:6px;min-width:0">' +
-      '<div class="row" style="gap:8px"><span class="chip" style="background:var(--' + (t.g === "645" ? "mega" : "power") + '-soft);color:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + G.name + "</span>" + chip + "</div>" +
+      '<div class="row" style="gap:8px"><span class="chip" style="background:var(--' + (t.g === "645" ? "mega" : "power") + '-soft);color:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + G.name + "</span>" +
+        (t.src === "sms" ? '<span class="chip bought">✓ Đã mua</span>' : '<span class="chip neutral">Chỉ lưu, chưa mua</span>') + chip + "</div>" +
       '<div class="balls" style="--game:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + nums + "</div>" +
-      '<div class="small muted">' + status + (t.n.length > 6 ? " · Bao " + t.n.length + " (" + comb(t.n.length, 6) + " bộ)" : "") + (t.src === "sms" ? " · <b>đã mua</b> (từ tin nhắn)" : " · đã lưu, chưa có tin nhắn mua") + "</div>" +
+      '<div class="small muted">' + status + (t.n.length > 6 ? " · Bao " + t.n.length + " (" + comb(t.n.length, 6) + " bộ)" : "") + "" + "</div>" +
       (best ? '<div class="small muted">Nếu mua bộ này ở mọi kỳ trước đây: trùng nhiều nhất ' + best.m + " số" + (best.d ? " (kỳ #" + best.d.id + ")" : "") + ", trúng giải " + best.wins + " lần.</div>" : "") + "</div>" +
       '<button class="btn sm ' + (S.confirmDel === t.id ? "danger" : "ghost") + '" data-del="' + esc(t.id) + '">' + (S.confirmDel === t.id ? "Bấm lần nữa để xóa" : "Xóa") + "</button></div>";
   }
