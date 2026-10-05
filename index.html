@@ -705,7 +705,7 @@ function viewTickets() {
     h += '<div class="ticket" style="align-items:flex-start"><div class="stack" style="gap:6px;min-width:0">' +
       '<div class="row" style="gap:8px"><span class="chip" style="background:var(--' + (t.g === "645" ? "mega" : "power") + '-soft);color:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + G.name + "</span>" + chip + "</div>" +
       '<div class="balls" style="--game:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + nums + "</div>" +
-      '<div class="small muted">' + status + (t.n.length > 6 ? " · Bao " + t.n.length + " (" + comb(t.n.length, 6) + " bộ)" : "") + (t.src === "sms" ? " · từ tin nhắn" : "") + "</div>" +
+      '<div class="small muted">' + status + (t.n.length > 6 ? " · Bao " + t.n.length + " (" + comb(t.n.length, 6) + " bộ)" : "") + (t.src === "sms" ? " · <b>đã mua</b> (từ tin nhắn)" : " · đã lưu, chưa có tin nhắn mua") + "</div>" +
       (best ? '<div class="small muted">Nếu mua bộ này ở mọi kỳ trước đây: trùng nhiều nhất ' + best.m + " số" + (best.d ? " (kỳ #" + best.d.id + ")" : "") + ", trúng giải " + best.wins + " lần.</div>" : "") + "</div>" +
       '<button class="btn sm ' + (S.confirmDel === t.id ? "danger" : "ghost") + '" data-del="' + esc(t.id) + '">' + (S.confirmDel === t.id ? "Bấm lần nữa để xóa" : "Xóa") + "</button></div>";
   }
@@ -840,14 +840,28 @@ function parseSMS(text) {
 }
 function ticketKey(t) { return t.g + "|" + t.target + "|" + [...t.n].sort((a, b) => a - b).join(","); }
 function importTickets(list) {
-  const have = new Set(S.tickets.map(ticketKey));
+  const byKey = new Map(S.tickets.map(t => [ticketKey(t), t]));
   const now = new Date().toISOString();
+  let confirmed = 0;
+  for (const t of list) {
+    const old = byKey.get(ticketKey(t));
+    if (old && old.src !== "sms") { old.src = "sms"; old.ky = old.ky || t.ky || undefined; old.code = old.code || t.code || undefined; confirmed++; }
+  }
+  const have = new Set(byKey.keys());
   const fresh = list.filter(t => !have.has(ticketKey(t))).map((t, i) => ({
     id: "t" + Date.now().toString(36) + i + rnd(1e6).toString(36), g: t.g, n: t.n, savedAt: now, target: t.target,
     ky: t.ky || undefined, code: t.code || undefined, src: "sms"
   }));
-  if (fresh.length) { S.tickets = fresh.concat(S.tickets); setLocalTickets(S.tickets); }
-  return { added: fresh.length, dup: list.length - fresh.length };
+  if (fresh.length) S.tickets = fresh.concat(S.tickets);
+  if (fresh.length || confirmed) setLocalTickets(S.tickets);
+  return { added: fresh.length, confirmed, dup: list.length - fresh.length - confirmed };
+}
+function importMsg(r) {
+  const parts = [];
+  if (r.added) parts.push("Đã thêm " + r.added + " vé đã mua");
+  if (r.confirmed) parts.push("đánh dấu " + r.confirmed + " vé đã lưu là đã mua");
+  if (!parts.length) return "Các vé này đã có rồi";
+  const m = parts.join(", "); return m.charAt(0).toUpperCase() + m.slice(1);
 }
 function smsPreview() {
   const list = parseSMS(S.smsText);
@@ -857,7 +871,7 @@ function smsPreview() {
   return '<div class="stack" style="gap:8px">' + list.map(t => {
     const dup = have.has(ticketKey(t)), price = comb(t.n.length, 6) * PRICE;
     return '<div class="row between" style="gap:8px"><div class="balls" style="--game:var(--' + (t.g === "645" ? "mega" : "power") + ')">' + t.n.map(n => ball(n, "sm")).join("") + "</div>" +
-      '<span class="small muted">' + GAMES[t.g].name + (t.n.length > 6 ? " · Bao " + t.n.length : "") + (t.ky ? " · #" + pad(t.ky).padStart(5, "0") : "") + " · " + dmy(t.target) + (t.guessed ? " (dự đoán)" : "") + " · " + money(price) + (dup ? " · đã có" : "") + "</span></div>";
+      '<span class="small muted">' + GAMES[t.g].name + (t.n.length > 6 ? " · Bao " + t.n.length : "") + (t.ky ? " · #" + pad(t.ky).padStart(5, "0") : "") + " · " + dmy(t.target) + (t.guessed ? " (dự đoán)" : "") + " · " + money(price) + (dup ? " · đã có trong danh sách" : "") + "</span></div>";
   }).join("") + "</div>";
 }
 function smsCard() {
@@ -1052,7 +1066,7 @@ document.addEventListener("click", e => {
   else if (act === "smssave") {
     const r = importTickets(parseSMS(S.smsText));
     S.smsText = ""; render();
-    toast(r.added ? "Đã lưu " + r.added + " vé" + (r.dup ? ", bỏ qua " + r.dup + " vé trùng" : "") : "Các vé này đã có rồi");
+    toast(importMsg(r));
   }
   else if (act === "smsclear") { S.smsText = ""; render(); }
   else if (act === "smspaste") {
@@ -1144,7 +1158,7 @@ async function start() {
       S.tab = "tickets";
       const r = importTickets(parseSMS(q));
       render();
-      toast(r.added ? "Đã tự thêm " + r.added + " vé từ tin nhắn" : (parseSMS(q).length ? "Vé này đã có rồi" : "Không nhận ra vé trong tin nhắn"));
+      toast(parseSMS(q).length ? importMsg(r) : "Không nhận ra vé trong tin nhắn");
       return;
     }
   } catch (e) {}
