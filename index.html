@@ -542,7 +542,9 @@ function viewPick() {
   h += '<div class="note">Mỗi bộ số đều có cùng khả năng trúng: <b>' + oneIn(1 / G.total) + "</b>. Chọn bộ ít người chọn không làm tăng khả năng trúng. Nó giúp bạn <b>ít phải chia giải với người khác</b> nếu trúng.</div></section>";
 
   const sel = S.picks;
-  h += '<section class="card stack" style="gap:12px"><div class="row between"><h2>Tự chọn số</h2><span class="small muted num">Đã chọn ' + sel.length + "/6</span></div>" +
+  h += '<section class="card stack" style="gap:12px"><div class="row between"><h2>Tự chọn và dò bộ số</h2><span class="small muted num">Đã chọn ' + sel.length + "/6</span></div>" +
+    '<p class="lead">Bấm chọn số, hoặc gõ bộ số vào ô dưới rồi bấm Dò để xem bộ đó từng ra hay chưa. Chọn 2–5 số để xem chúng từng ra cùng nhau mấy lần.</p>' +
+    '<form id="pickform" class="row" style="gap:8px;flex-wrap:nowrap"><input id="pick-input" inputmode="numeric" autocomplete="off" placeholder="vd 03 15 18 28 33 36" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:9px 12px;font:inherit;font-size:16px;color:var(--ink)"><button class="btn" type="submit">Dò</button></form>' +
     '<div class="grid">' + Array.from({ length: G.N }, (_, i) => i + 1).map(n => {
       const on = sel.includes(n);
       return '<button type="button" class="cell" data-pick="' + n + '" aria-pressed="' + on + '"' + (!on && sel.length >= 6 ? " disabled" : "") + ">" + pad(n) + "</button>";
@@ -552,6 +554,7 @@ function viewPick() {
     h += '<div class="row between"><div class="balls">' + s.map(n => ball(n, "sm")).join("") + '</div><span class="chip ' + pop.level + '">' + pop.label + "</span></div>";
     h += pop.reasons.length ? '<ul class="reasons">' + pop.reasons.map(r => "<li>" + r + "</li>").join("") + "</ul>" : '<p class="small muted p">Không thấy dấu hiệu bộ số phổ biến.</p>';
   }
+  h += pickHistory(g, sel);
   h += '<div class="row"><button class="btn" data-act="savepick"' + (sel.length === 6 ? "" : " disabled") + '>Lưu vé này</button><button class="btn ghost" data-act="clear"' + (sel.length ? "" : " disabled") + ">Xóa chọn</button></div></section>";
 
   h += '<section class="card"><details class="more"><summary>Muốn tăng khả năng trúng thì làm gì?</summary><div class="stack small" style="gap:8px">' +
@@ -559,6 +562,42 @@ function viewPick() {
     '<p class="p">Thống kê số nóng, số lạnh, số lâu chưa ra không giúp gì. Mục <b>Kiểm chứng</b> chạy thử các cách này trên toàn bộ ' + fmt(draws(g).length) + " kỳ đã quay để bạn tự xem.</p>" +
     '<p class="p">Khi jackpot lên cao, nhiều người mua hơn nên khả năng phải chia giải cũng tăng. Đó là lúc chọn bộ ít người chọn có ích nhất.</p></div></details></section>';
   return h;
+}
+
+function drawRow(d, s) {
+  return '<div class="row" style="gap:8px;flex-wrap:nowrap"><span class="small muted num" style="flex:none;width:6.6em">#' + pad(d.id).padStart(5, "0") + "<br>" + dmy(d.date) + '</span><div class="balls">' +
+    d.n.map(n => ball(n, s.includes(n) ? "sm" : "sm miss")).join("") + (d.b ? '<span class="plus">+</span>' + ball(d.b, s.includes(d.b) ? "sm bonus" : "sm miss") : "") + "</div></div>";
+}
+function pickHistory(g, sel) {
+  const D = draws(g), k = sel.length, s = [...sel].sort((a, b) => a - b), N = GAMES[g].N;
+  if (k < 2) return "";
+  const dist = [0, 0, 0, 0, 0, 0, 0], hits = [], near = [];
+  let j2 = 0;
+  for (const d of D) {
+    const m = s.filter(x => d.n.includes(x)).length;
+    if (m === k) hits.push(d);
+    if (k === 6) { dist[m]++; if (m >= 4 && m < 6) near.push([m, d]); if (m === 5 && d.b && s.includes(d.b)) j2++; }
+  }
+  const expect = D.length * comb(N - k, 6 - k) / comb(N, 6);
+  let h = '<div class="stack" style="gap:10px;border-top:1px dashed var(--line);padding-top:12px"><h3>Lịch sử trong ' + fmt(D.length) + " kỳ</h3>";
+  if (k === 6) {
+    h += hits.length ? '<p class="p"><b>Bộ này đã ra nguyên bộ ' + hits.length + " lần</b> (trúng Jackpot).</p>" : '<p class="p">Bộ này <b>chưa từng ra nguyên bộ</b> lần nào.</p>';
+    h += '<div class="stats" style="grid-template-columns:repeat(3,minmax(0,1fr))">' +
+      '<div class="stat"><div class="k">Trùng 5 số</div><div class="v">' + dist[5] + "</div></div>" +
+      '<div class="stat"><div class="k">Trùng 4 số</div><div class="v">' + dist[4] + "</div></div>" +
+      '<div class="stat"><div class="k">Trùng 3 số</div><div class="v">' + dist[3] + "</div></div></div>";
+    if (g === "655" && j2) h += '<p class="small p">Trong đó ' + j2 + " lần trùng 5 số kèm số đặc biệt (Jackpot 2).</p>";
+    const show = hits.map(d => [6, d]).concat(near.sort((a, b) => b[0] - a[0] || b[1].id - a[1].id)).slice(0, 5);
+    if (show.length) h += '<div class="stack" style="gap:6px">' + show.map(x => drawRow(x[1], s)).join("") + "</div>";
+    h += '<p class="small muted p">Nếu mua bộ này ở mọi kỳ thì trúng từ giải ba trở lên ' + (dist[3] + dist[4] + dist[5] + dist[6]) + " lần, theo xác suất trung bình là " +
+      (D.length * GAMES[g].prizes.reduce((a, p) => a + p.ways, 0) / GAMES[g].total).toLocaleString("vi-VN", { maximumFractionDigits: 0 }) + " lần.</p>";
+  } else {
+    h += hits.length
+      ? '<p class="p">' + k + " số này cùng ra trong <b>" + hits.length + " kỳ</b>. Theo xác suất, trung bình là khoảng " + expect.toLocaleString("vi-VN", { maximumFractionDigits: 1 }) + " kỳ.</p>" +
+        '<div class="stack" style="gap:6px">' + hits.slice(-5).reverse().map(d => drawRow(d, s)).join("") + "</div>" + (hits.length > 5 ? '<p class="small muted p">Hiện 5 kỳ gần nhất.</p>' : "")
+      : '<p class="p">' + k + " số này chưa từng cùng ra trong một kỳ. Theo xác suất, trung bình là khoảng " + expect.toLocaleString("vi-VN", { maximumFractionDigits: 1 }) + " kỳ.</p>";
+  }
+  return h + '<p class="small muted p">Một bộ số đã ra hay chưa ra đều không làm nó dễ hay khó ra hơn ở kỳ sau.</p></div>';
 }
 
 function viewStats() {
@@ -1049,6 +1088,15 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("toggle", e => { if (e.target.id === "adminbox") S.adminOpen = e.target.open; }, true);
 document.addEventListener("submit", async e => {
+  if (e.target.id === "pickform") {
+    e.preventDefault();
+    const N = GAMES[S.game].N, raw = (document.getElementById("pick-input").value.match(/\d+/g) || []).map(Number);
+    const nums = [...new Set(raw.filter(x => x >= 1 && x <= N))].slice(0, 6);
+    if (nums.length < 2) { toast("Nhập ít nhất 2 số từ 1 đến " + N); return; }
+    if (nums.length < raw.length) toast("Đã bỏ số trùng hoặc ngoài khoảng 1–" + N);
+    S.picks = nums; render();
+    return;
+  }
   if (e.target.id !== "addform") return;
   e.preventDefault();
   const g = S.game, N = GAMES[g].N, msg = document.getElementById("f-msg");
