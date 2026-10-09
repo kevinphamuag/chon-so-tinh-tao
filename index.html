@@ -109,7 +109,7 @@ button { cursor: pointer; }
 
 .ticket { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-block: 10px; border-top: 1px dashed var(--line); }
 .ticket:first-child { border-top: 0; padding-top: 0; }
-.ticket .side { display: flex; align-items: center; gap: 8px; }
+.ticket .side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .grid { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
 body[data-game="655"] .grid { grid-template-columns: repeat(10, minmax(0, 1fr)); }
@@ -531,7 +531,9 @@ function ticketRow(nums, i, src) {
   const pop = popularity(S.game, nums);
   return '<div class="ticket"><div class="balls">' + nums.map(n => ball(n, S.justGen ? "sm pop" : "sm")).join("") + "</div>" +
     '<div class="side"><span class="chip ' + pop.level + '">' + pop.label + "</span>" +
-    '<button class="btn sm" data-act="save" data-src="' + src + '" data-i="' + i + '">Lưu vé</button></div></div>';
+    '<button class="btn sm" data-act="save" data-src="' + src + '" data-i="' + i + '">Lưu vé</button>' +
+    '<button class="btn sm" data-act="lookup" data-i="' + i + '">Dò</button>' +
+    '<button class="btn sm ghost" data-act="copy" data-i="' + i + '">Chép</button></div></div>';
 }
 
 function viewPick() {
@@ -1082,6 +1084,24 @@ document.addEventListener("click", e => {
   else if (act === "clearchat") { S.chat = []; render(); }
   else if (act === "send") { const ta = document.getElementById("ai-input"); if (ta && ta.value.trim()) askAI(ta.value.trim()); }
   else if (act === "savepick" && S.picks.length === 6) { saveTicket(S.picks); S.picks = []; }
+  else if (act === "lookup") {
+    const t = S.generated[Number(b.dataset.i)];
+    if (t) {
+      S.picks = t.slice(); render();
+      const f = document.getElementById("pickform");
+      if (f) f.closest("section").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+  else if (act === "copy") {
+    const t = S.generated[Number(b.dataset.i)];
+    if (t) {
+      const text = t.map(pad).join(" ");
+      const done = () => { b.textContent = "✓ Chép"; toast("Đã sao chép " + text); };
+      try {
+        navigator.clipboard.writeText(text).then(done, () => { const inp = document.getElementById("pick-input"); if (inp) { inp.value = text; } toast("Không sao chép được, đã điền sẵn vào ô Dò"); });
+      } catch (e) { const inp = document.getElementById("pick-input"); if (inp) inp.value = text; toast("Đã điền sẵn vào ô Dò"); }
+    }
+  }
   else if (act === "save") {
     const t = S.generated[Number(b.dataset.i)];
     if (t) { saveTicket(t); b.disabled = true; b.textContent = "Đã lưu"; }
