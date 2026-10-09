@@ -547,7 +547,7 @@ function viewPick() {
   const sel = S.picks;
   h += '<section class="card stack" style="gap:12px"><div class="row between"><h2>Tự chọn và dò bộ số</h2><span class="small muted num">Đã chọn ' + sel.length + "/6</span></div>" +
     '<p class="lead">Bấm chọn số, hoặc gõ bộ số vào ô dưới rồi bấm Dò để xem bộ đó từng ra hay chưa. Chọn 2–5 số để xem chúng từng ra cùng nhau mấy lần.</p>' +
-    '<form id="pickform" class="row" style="gap:8px;flex-wrap:nowrap"><input id="pick-input" inputmode="numeric" autocomplete="off" placeholder="vd 03 15 18 28 33 36" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:9px 12px;font:inherit;font-size:16px;color:var(--ink)"><button class="btn" type="submit">Dò</button></form>' +
+    '<form id="pickform" class="row" style="gap:8px;flex-wrap:nowrap"><input id="pick-input" inputmode="numeric" autocomplete="off" placeholder="vd 03 15 18 28 33 36" value="' + esc(S.pickText || "") + '" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:9px 12px;font:inherit;font-size:16px;color:var(--ink)"><button class="btn" type="submit">Dò</button></form>' +
     '<div class="grid">' + Array.from({ length: G.N }, (_, i) => i + 1).map(n => {
       const on = sel.includes(n);
       return '<button type="button" class="cell" data-pick="' + n + '" aria-pressed="' + on + '"' + (!on && sel.length >= 6 ? " disabled" : "") + ">" + pad(n) + "</button>";
@@ -567,6 +567,31 @@ function viewPick() {
   return h;
 }
 
+function splitDigits(run, N) {
+  // "020614323647" -> [2,6,14,32,36,47]; odd lengths get one single-digit number where it fits
+  if (run.length <= 2) return [Number(run)];
+  const memo = new Map();
+  const go = i => {
+    if (i === run.length) return [];
+    if (memo.has(i)) return memo.get(i);
+    let best = null;
+    for (const len of [2, 1]) {
+      if (i + len > run.length) continue;
+      const v = Number(run.slice(i, i + len));
+      if (v < 1 || v > N) continue;
+      const rest = go(i + len);
+      if (rest) { best = [v].concat(rest); break; }
+    }
+    memo.set(i, best);
+    return best;
+  };
+  return go(0) || [];
+}
+function parsePickText(text, N) {
+  const out = [];
+  for (const run of String(text).match(/\d+/g) || []) out.push(...splitDigits(run, N));
+  return out;
+}
 function drawRow(d, s) {
   return '<div class="row" style="gap:8px;flex-wrap:nowrap"><span class="small muted num" style="flex:none;width:6.6em">#' + pad(d.id).padStart(5, "0") + "<br>" + dmy(d.date) + '</span><div class="balls">' +
     d.n.map(n => ball(n, s.includes(n) ? "sm" : "sm miss")).join("") + (d.b ? '<span class="plus">+</span>' + ball(d.b, s.includes(d.b) ? "sm bonus" : "sm miss") : "") + "</div></div>";
@@ -1065,7 +1090,7 @@ document.addEventListener("click", e => {
   if (b.dataset.ask) { askAI(b.dataset.ask); return; }
   const act = b.dataset.act;
   if (act === "gen") { S.generated = generate(S.game, S.count); S.justGen = true; render(); S.justGen = false; }
-  else if (act === "clear") { S.picks = []; render(); }
+  else if (act === "clear") { S.picks = []; S.pickText = ""; render(); }
   else if (act === "savekey") saveKey();
   else if (act === "smssave") {
     const r = importTickets(parseSMS(S.smsText));
@@ -1087,7 +1112,7 @@ document.addEventListener("click", e => {
   else if (act === "lookup") {
     const t = S.generated[Number(b.dataset.i)];
     if (t) {
-      S.picks = t.slice(); render();
+      S.picks = t.slice(); S.pickText = t.map(pad).join(" "); render();
       const f = document.getElementById("pickform");
       if (f) f.closest("section").scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -1109,6 +1134,17 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("input", e => {
   const id = e.target.id;
+  if (id === "pick-input") {
+    const v = e.target.value, parts = v.trim().split(/ +/);
+    // typed without spaces (e.g. 020614): group by two digits as they type
+    if (/^[\d ]+$/.test(v) && parts[parts.length - 1].length >= 3 && parts.slice(0, -1).every(p => p.length === 2)) {
+      const groups = v.replace(/ /g, "").match(/\d{1,2}/g), N = GAMES[S.game].N;
+      if (groups.every((g, i) => (g.length === 1 && i === groups.length - 1) || (Number(g) >= 1 && Number(g) <= N))) e.target.value = groups.join(" ");
+      else if (!S.zeroHint) { S.zeroHint = true; toast("Số có 1 chữ số hãy gõ thêm 0 phía trước, ví dụ 05"); }
+    }
+    S.pickText = e.target.value;
+    return;
+  }
   if (id === "sms-input") {
     S.smsText = e.target.value;
     document.getElementById("sms-preview").innerHTML = smsPreview();
@@ -1126,11 +1162,12 @@ document.addEventListener("toggle", e => { if (e.target.id === "adminbox") S.adm
 document.addEventListener("submit", async e => {
   if (e.target.id === "pickform") {
     e.preventDefault();
-    const N = GAMES[S.game].N, raw = (document.getElementById("pick-input").value.match(/\d+/g) || []).map(Number);
+    const N = GAMES[S.game].N, txt = document.getElementById("pick-input").value, raw = parsePickText(txt, N);
     const nums = [...new Set(raw.filter(x => x >= 1 && x <= N))].slice(0, 6);
     if (nums.length < 2) { toast("Nhập ít nhất 2 số từ 1 đến " + N); return; }
-    if (nums.length < raw.length) toast("Đã bỏ số trùng hoặc ngoài khoảng 1–" + N);
-    S.picks = nums; render();
+    if ((txt.match(/\d+/g) || []).some(r => r.length > 2 && r.length % 2)) toast("Đã tự tách số. Nếu sai, hãy gõ số 1 chữ số có 0 phía trước, ví dụ 05");
+    else if (nums.length < raw.length) toast("Đã bỏ số trùng hoặc ngoài khoảng 1–" + N);
+    S.picks = nums; S.pickText = nums.map(pad).join(" "); render();
     return;
   }
   if (e.target.id !== "addform") return;
