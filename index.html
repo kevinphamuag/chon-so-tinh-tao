@@ -1189,6 +1189,21 @@ document.addEventListener("submit", async e => {
 });
 
 /* ---------- Start ---------- */
+const BUILD = "__BUILD__";
+async function checkUpdate() {
+  // Safari may keep an old copy of this page; when a newer one is published, load it once
+  if (BUILD.startsWith("__")) return;
+  try {
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    const v = String((await r.json()).v || "");
+    if (!v || v === BUILD) return;
+    let tried = null; try { tried = sessionStorage.getItem("css_reload"); } catch (e) {}
+    if (tried === v) return;
+    try { sessionStorage.setItem("css_reload", v); } catch (e) {}
+    location.replace(location.pathname + "?v=" + v + location.hash);
+  } catch (e) {}
+}
 function localExtra() {
   try { const v = JSON.parse(localStorage.getItem("css_extra") || "{}"); return { "645": v["645"] || [], "655": v["655"] || [] }; }
   catch (e) { return { "645": [], "655": [] }; }
@@ -1224,6 +1239,8 @@ async function start() {
   render();
 }
 start();
+if (!/[?&]sms=/.test(location.search)) checkUpdate();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
 })();
 </script>
 
