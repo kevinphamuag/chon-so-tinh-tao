@@ -907,7 +907,7 @@ function smsCard() {
   return '<section class="card stack" style="gap:10px"><div><h2>Thêm vé từ tin nhắn</h2><p class="lead">Sao chép tin nhắn xác nhận từ 9969 (hoặc tin bạn gửi đi), rồi dán vào đây. App tự nhận loại vé, kỳ quay và bộ số.</p></div>' +
     '<textarea id="sms-input" rows="3" style="width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;color:var(--ink);resize:vertical" placeholder="Dán tin nhắn vào đây">' + esc(S.smsText) + "</textarea>" +
     '<div id="sms-preview">' + smsPreview() + "</div>" +
-    '<div class="row"><button class="btn" data-act="smspaste">Dán</button><button class="btn primary" data-act="smssave"' + (parseSMS(S.smsText).length ? "" : " disabled") + ">Lưu vé</button>" +
+    '<div class="row"><button class="btn" data-act="smspaste">Dán và lưu</button><button class="btn primary" data-act="smssave"' + (parseSMS(S.smsText).length ? "" : " disabled") + ">Lưu vé</button>" +
     (S.smsText ? '<button class="btn ghost" data-act="smsclear">Xóa</button>' : "") + "</div></section>";
 }
 
@@ -1100,7 +1100,14 @@ document.addEventListener("click", e => {
   else if (act === "smsclear") { S.smsText = ""; render(); }
   else if (act === "smspaste") {
     (async () => {
-      try { const t = await navigator.clipboard.readText(); if (t) { S.smsText = t; render(); return; } } catch (e) {}
+      try {
+        const t = await navigator.clipboard.readText();
+        if (t) {
+          if (parseSMS(t).length) { const r = importTickets(parseSMS(t)); S.smsText = ""; render(); toast(importMsg(r)); }
+          else { S.smsText = t; render(); }
+          return;
+        }
+      } catch (e) {}
       const ta = document.getElementById("sms-input"); if (ta) ta.focus();
       toast("Chạm giữ vào ô trống rồi chọn Dán");
     })();
