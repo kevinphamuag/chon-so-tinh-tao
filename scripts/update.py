@@ -280,7 +280,8 @@ def update_info(g, G, rows, cands, meta):
     jn = "Jackpot 1" if G["bonus"] else "Jackpot"
     match = [c for c in cands.get(latest[0], []) if c[1:4] == key]
     fresh = (vn_now().date() - dt.date.fromisoformat(latest[1])).days <= 2
-    unknown = prev.get("id") != latest[0] or prev.get("winners") is None
+    tries = prev.get("tries", 0) if prev.get("id") == latest[0] else 0
+    unknown = (prev.get("id") != latest[0] or prev.get("winners") is None) and tries < 6
     if KEY and fresh and unknown and all(c[6] is None for c in match):
         for url in G["pages"]:
             st, raw = fetch(url)
@@ -296,6 +297,11 @@ def update_info(g, G, rows, cands, meta):
             match += got
             if any(c[6] is not None for c in got):
                 break
+    if KEY and fresh and unknown and all(c[6] is None for c in match):
+        # remember how often we asked, so a draw whose winners no page reports stops costing Gemini calls
+        if prev.get("id") == latest[0]:
+            prev["tries"] = tries + 1
+            changed = True
     if not match:
         return changed
     j, w1, w2 = most_common([c[4] for c in match]), most_common([c[6] for c in match]), most_common([c[7] for c in match])
@@ -311,6 +317,8 @@ def update_info(g, G, rows, cands, meta):
                 notified[g] = prev["id"]
                 changed = True
     info = {"id": latest[0], "date": latest[1], "jackpot": j or old_j, "winners": w1}
+    if w1 is None:
+        info["tries"] = (prev.get("tries", 0) if prev.get("id") == latest[0] else 0) + 1
     if G["bonus"]:
         info["winners2"] = w2
     if info != prev:

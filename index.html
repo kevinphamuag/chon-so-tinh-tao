@@ -512,7 +512,9 @@ function renderLatest() {
   } else if (cj) h += '<div class="meta" style="margin-top:10px">' + jn + " kỳ #" + pad(last.id).padStart(5, "0") + ': <b class="num">' + fmt(cj) + " đ</b></div>";
   if (cj && !(inf && inf.winners > 0)) h += '<div class="meta" style="margin-top:4px">' + jn + " kỳ tới cao hơn con số này và tăng dần theo số vé bán ra. Xem giá trị đang chạy trên app Vietlott.</div>";
   if (inf && g === "655" && inf.winners2 != null) h += '<div class="meta" style="margin-top:4px">Jackpot 2: ' + (inf.winners2 > 0 ? "<b>" + inf.winners2 + " vé trúng</b>" : "không ai trúng") + "</div>";
-  h += '<div class="meta" style="margin-top:' + (cj ? 4 : 10) + 'px">Kỳ tới' + (stale ? "" : " #" + pad(last.id + 1).padStart(5, "0")) + ': <b>' + DOW[nd.getDay()] + " " + pad(nd.getDate()) + "/" + pad(nd.getMonth() + 1) + "</b> lúc 18:00 · Dữ liệu " + fmt(D.length) + " kỳ";
+  const pending = pd && isoOf(pd) > last.date;
+  if (pending && !stale) h += '<div class="note" style="margin-top:10px">Kỳ #' + pad(last.id + 1).padStart(5, "0") + " (" + DOW[pd.getDay()] + " " + pad(pd.getDate()) + "/" + pad(pd.getMonth() + 1) + ") đã quay, app đang chờ cập nhật kết quả. Thường mất 1–3 tiếng.</div>";
+  h += '<div class="meta" style="margin-top:' + (cj ? 4 : 10) + 'px">Kỳ tới' + (stale ? "" : " #" + pad(last.id + (pending ? 2 : 1)).padStart(5, "0")) + ': <b>' + DOW[nd.getDay()] + " " + pad(nd.getDate()) + "/" + pad(nd.getMonth() + 1) + "</b> lúc 18:00 · Dữ liệu " + fmt(D.length) + " kỳ";
   if (S.meta && S.meta.updatedAt) h += " · cập nhật " + esc(new Date(S.meta.updatedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }));
   h += "</div>";
   if (stale) h += '<div class="note" style="margin-top:10px">Chưa có kết quả kỳ ' + DOW[pd.getDay()] + " " + pad(pd.getDate()) + "/" + pad(pd.getMonth() + 1) + ". Máy cập nhật tự động có thể đang chậm. Bạn có thể nhập tay ở dưới.</div>";

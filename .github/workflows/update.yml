@@ -2,9 +2,11 @@ name: Cập nhật kết quả và đăng app
 
 on:
   schedule:
-    - cron: "50 11 * * *"   # 18:50 giờ Việt Nam, ngay sau giờ quay
-    - cron: "20 13 * * *"   # 20:20 giờ Việt Nam, lần thử lại
-    - cron: "40 23 * * *"   # 06:40 sáng hôm sau
+    # GitHub hay chạy lịch trễ hoặc bỏ lượt, nên đặt dày: mỗi 20 phút từ 18:20 đến 00:40 giờ Việt Nam,
+    # rồi mỗi 3 tiếng. Lượt nào không có gì mới thì xong trong vài giây.
+    - cron: "20,40 11 * * *"
+    - cron: "*/20 12-17 * * *"
+    - cron: "10 */3 * * *"
   push:
     branches: [main]
   repository_dispatch:
