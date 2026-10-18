@@ -30,6 +30,8 @@ KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 APP_URL = "https://kevinphamuag.github.io/chon-so-tinh-tao/"
 # ntfy.sh topic the phone subscribes to; jackpot news is public, so the name need not be secret
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "").strip() or "chonso-xaaj3p2elfs6"
+NTFY_SERVER = (os.environ.get("NTFY_SERVER", "").strip() or "https://ntfy.sh").rstrip("/") + "/"
+NTFY_TOKEN = os.environ.get("NTFY_TOKEN", "").strip()
 
 GAMES = {
     "645": {"name": "Mega 6/45", "N": 45, "weekdays": {2, 4, 6}, "bonus": False,
@@ -237,7 +239,10 @@ def notify(title, message, tags=None):
     """Push a phone notification through ntfy.sh."""
     body = json.dumps({"topic": NTFY_TOPIC, "title": title, "message": message, "tags": tags or [],
                        "priority": 4, "click": APP_URL}).encode()
-    st, out = fetch("https://ntfy.sh/", data=body, headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if NTFY_TOKEN:
+        headers["Authorization"] = "Bearer " + NTFY_TOKEN
+    st, out = fetch(NTFY_SERVER, data=body, headers=headers)
     log("  Gửi thông báo (%s): %s" % (st, title))
     return st == 200
 
