@@ -7,6 +7,8 @@ on:
     - cron: "40 23 * * *"   # 06:40 sáng hôm sau
   push:
     branches: [main]
+  repository_dispatch:
+    types: [ticket]   # Phím tắt trên iPhone gửi tin nhắn vé 9969 tới đây
   workflow_dispatch:
     inputs:
       probe:
@@ -24,7 +26,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: update-and-deploy
+  # each ticket message gets its own group so a busy update run never cancels it
+  group: ${{ github.event_name == 'repository_dispatch' && format('ticket-{0}', github.run_id) || 'update-and-deploy' }}
   cancel-in-progress: false
 
 jobs:
@@ -33,24 +36,32 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Lưu vé từ tin nhắn
+        if: github.event_name == 'repository_dispatch'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TICKETS_KEY: ${{ secrets.TICKETS_KEY }}
+        run: python3 scripts/tickets.py add
       - name: Lấy kết quả mới
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
           NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+          TICKETS_KEY: ${{ secrets.TICKETS_KEY }}
         run: python3 scripts/update.py ${{ inputs.probe && '--probe' || '' }} ${{ inputs.test_notify && '--test-notify' || '' }}
       - name: Lưu dữ liệu mới
         run: |
-          if git diff --quiet -- data; then echo "Không có gì mới."; exit 0; fi
+          if [ -z "$(git status --porcelain -- data)" ]; then echo "Không có gì mới."; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data
           git commit -m "Cập nhật kết quả $(TZ=Asia/Ho_Chi_Minh date +%d/%m/%Y)"
-          git push
+          for i in 1 2 3; do git pull --rebase -q origin main && git push && exit 0; sleep 5; done; exit 1
 
   deploy:
     needs: update
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

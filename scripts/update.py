@@ -453,6 +453,12 @@ def main():
 
         changed = update_info(g, G, rows, cands, meta) or changed
 
+    try:
+        import tickets
+        tickets.check(draws, meta, notify)
+    except Exception as e:  # never let ticket alerts break the results update
+        log("Kiểm tra vé lỗi: %s" % e)
+
     if changed:
         meta["updatedAt"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         meta.pop("notes", None)
