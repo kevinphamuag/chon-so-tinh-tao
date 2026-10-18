@@ -27,6 +27,9 @@ META = os.path.join(ROOT, "data", "meta.json")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 GEMINI = "https://generativelanguage.googleapis.com/v1beta/"
 KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+APP_URL = "https://kevinphamuag.github.io/chon-so-tinh-tao/"
+# ntfy.sh topic the phone subscribes to; jackpot news is public, so the name need not be secret
+NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "").strip() or "chonso-xaaj3p2elfs6"
 
 GAMES = {
     "645": {"name": "Mega 6/45", "N": 45, "weekdays": {2, 4, 6}, "bonus": False,
@@ -224,6 +227,21 @@ def norm(g, item, source):
             count(item.get("jackpot2_winners")) if G["bonus"] else None)
 
 
+def money_vn(v):
+    if v >= 1e9:
+        return ("%.1f" % (v / 1e9)).replace(".", ",").replace(",0", "") + " tỷ"
+    return format(int(v), ",").replace(",", ".") + " đ"
+
+
+def notify(title, message, tags=None):
+    """Push a phone notification through ntfy.sh."""
+    body = json.dumps({"topic": NTFY_TOPIC, "title": title, "message": message, "tags": tags or [],
+                       "priority": 4, "click": APP_URL}).encode()
+    st, out = fetch("https://ntfy.sh/", data=body, headers={"Content-Type": "application/json"})
+    log("  Gửi thông báo (%s): %s" % (st, title))
+    return st == 200
+
+
 def fmt_args(G):
     return {"bonus": "số đặc biệt (số nguyên)" if G["bonus"] else "null", "j1": " 1" if G["bonus"] else "",
             "j2w": "số vé trúng Jackpot 2 (0 nếu không ai trúng, null nếu không ghi)" if G["bonus"] else "null"}
@@ -246,15 +264,19 @@ def expected_dates(g, last_date):
 
 
 def update_info(g, G, rows, cands, meta):
-    """Record jackpot amount and winner counts of the newest draw in meta['info']."""
+    """Record jackpot amount and winner counts of the newest draw in meta['info'],
+    and push a phone notification when someone wins the top jackpot."""
     changed = False
-    # jackpot amount and winners of the newest draw
     latest = rows[-1]
     key = (latest[1], tuple(latest[2:8]), latest[8] if G["bonus"] else None)
     info_all = meta.setdefault("info", {})
+    notified = meta.setdefault("notified", {})
     prev = info_all.get(g) or {}
+    jn = "Jackpot 1" if G["bonus"] else "Jackpot"
     match = [c for c in cands.get(latest[0], []) if c[1:4] == key]
-    if not match and KEY and prev.get("id") != latest[0]:
+    fresh = (vn_now().date() - dt.date.fromisoformat(latest[1])).days <= 2
+    unknown = prev.get("id") != latest[0] or prev.get("winners") is None
+    if KEY and fresh and unknown and all(c[6] is None for c in match):
         for url in G["pages"]:
             st, raw = fetch(url)
             if is_blocked(st, raw):
@@ -264,33 +286,52 @@ def update_info(g, G, rows, cands, meta):
             except Exception as e:
                 REPORT.append((G["name"], url + " (jackpot)", st, len(raw), "lỗi Gemini: %s" % str(e)[:80], 0))
                 break
-            match = [n for n in (norm(g, it, url) for it in items if isinstance(it, dict)) if n and n[0] == latest[0] and n[1:4] == key]
-            REPORT.append((G["name"], url + " (jackpot)", st, len(raw), "", len(match)))
-            if match:
+            got = [n for n in (norm(g, it, url) for it in items if isinstance(it, dict)) if n and n[0] == latest[0] and n[1:4] == key]
+            REPORT.append((G["name"], url + " (jackpot)", st, len(raw), "", len(got)))
+            match += got
+            if any(c[6] is not None for c in got):
                 break
-    if match:
-        j, w1, w2 = most_common([c[4] for c in match]), most_common([c[6] for c in match]), most_common([c[7] for c in match])
-        old_j = meta.get("jackpot" + g)
-        if w1 is None and j and prev.get("jackpot") and prev.get("id") == latest[0] - 1 and j > prev["jackpot"] * 1.001:
-            w1 = 0  # jackpot kept growing from the previous draw: nobody won it
-        info = {"id": latest[0], "date": latest[1], "jackpot": j or old_j, "winners": w1}
-        if G["bonus"]:
-            info["winners2"] = w2
-        if info != prev:
-            info_all[g] = info
+    if not match:
+        return changed
+    j, w1, w2 = most_common([c[4] for c in match]), most_common([c[6] for c in match]), most_common([c[7] for c in match])
+    old_j = meta.get("jackpot" + g)
+    if prev.get("id") == latest[0] - 1 and prev.get("jackpot") and j:
+        if w1 is None and j > prev["jackpot"] * 1.001:
+            w1 = 0  # jackpot kept growing from the previous draw: nobody won it this time
+        if prev.get("winners") is None and j < prev["jackpot"] * 0.6 and notified.get(g) != prev["id"]:
+            # jackpot fell back toward the minimum: the previous draw had a winner we did not catch
+            if notify("%s: có người trúng %s!" % (G["name"], jn),
+                      "Kỳ #%05d có vé trúng %s trị giá khoảng %s. Jackpot đã quay lại mức %s."
+                      % (prev["id"], jn, money_vn(prev["jackpot"]), money_vn(j)), ["tada", "moneybag"]):
+                notified[g] = prev["id"]
+                changed = True
+    info = {"id": latest[0], "date": latest[1], "jackpot": j or old_j, "winners": w1}
+    if G["bonus"]:
+        info["winners2"] = w2
+    if info != prev:
+        info_all[g] = info
+        changed = True
+        log("  Kỳ #%d: jackpot %s đ, số vé trúng jackpot: %s%s" % (latest[0], format(info["jackpot"] or 0, ","), w1,
+                                                                ", jackpot 2: %s" % w2 if G["bonus"] else ""))
+    if w1 and w1 > 0 and notified.get(g) != latest[0]:
+        d = latest[1].split("-")
+        if notify("%s: có người trúng %s!" % (G["name"], jn),
+                  "Kỳ #%05d (%s/%s): %d vé trúng %s trị giá %s. Kỳ tới %s quay lại từ mức tối thiểu."
+                  % (latest[0], d[2], d[1], w1, jn, money_vn(info["jackpot"] or 0), jn), ["tada", "moneybag"]):
+            notified[g] = latest[0]
             changed = True
-            log("  Kỳ #%d: jackpot %s đ, số vé trúng jackpot: %s%s" % (latest[0], format(info["jackpot"] or 0, ","), w1,
-                                                                    ", jackpot 2: %s" % w2 if G["bonus"] else ""))
-        if j and old_j != j:
-            meta["jackpot" + g] = j
-            meta["jackpotAt"] = latest[1]
-            changed = True
-
+    if j and old_j != j:
+        meta["jackpot" + g] = j
+        meta["jackpotAt"] = latest[1]
+        changed = True
     return changed
 
 
 def main():
     probe = "--probe" in sys.argv
+    if "--test-notify" in sys.argv:
+        notify("Thử thông báo Chọn Số Tỉnh Táo",
+               "Bạn sẽ nhận thông báo như thế này khi có người trúng Jackpot 1 Mega 6/45 hoặc Power 6/55.", ["bell"])
     draws = json.load(open(DRAWS))
     meta = json.load(open(META)) if os.path.exists(META) else {}
     changed = False
