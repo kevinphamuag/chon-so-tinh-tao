@@ -508,10 +508,11 @@ function renderLatest() {
       '<div class="meta" style="margin-top:4px">Kỳ tới ' + jn + " quay lại từ khoảng " + money(GAMES[g].minJ) + ".</div>";
   } else if (inf && inf.winners === 0) {
     h += '<div class="row" style="margin-top:10px;gap:8px"><span class="chip neutral">Không ai trúng ' + jn + "</span>" +
-      '<span class="meta"><b class="num">' + fmt(inf.jackpot) + " đ</b> cộng dồn sang kỳ tới</span></div>";
-  } else if (cj) h += '<div class="meta" style="margin-top:10px">' + jn + ' hiện tại: <b class="num">' + fmt(cj) + " đ</b></div>";
+      '<span class="meta">kỳ này <b class="num">' + fmt(inf.jackpot) + " đ</b>, cộng dồn sang kỳ tới</span></div>";
+  } else if (cj) h += '<div class="meta" style="margin-top:10px">' + jn + " kỳ #" + pad(last.id).padStart(5, "0") + ': <b class="num">' + fmt(cj) + " đ</b></div>";
+  if (cj && !(inf && inf.winners > 0)) h += '<div class="meta" style="margin-top:4px">' + jn + " kỳ tới cao hơn con số này và tăng dần theo số vé bán ra. Xem giá trị đang chạy trên app Vietlott.</div>";
   if (inf && g === "655" && inf.winners2 != null) h += '<div class="meta" style="margin-top:4px">Jackpot 2: ' + (inf.winners2 > 0 ? "<b>" + inf.winners2 + " vé trúng</b>" : "không ai trúng") + "</div>";
-  h += '<div class="meta" style="margin-top:' + (cj ? 4 : 10) + 'px">Kỳ tới: <b>' + DOW[nd.getDay()] + " " + pad(nd.getDate()) + "/" + pad(nd.getMonth() + 1) + "</b> lúc 18:00 · Dữ liệu " + fmt(D.length) + " kỳ";
+  h += '<div class="meta" style="margin-top:' + (cj ? 4 : 10) + 'px">Kỳ tới' + (stale ? "" : " #" + pad(last.id + 1).padStart(5, "0")) + ': <b>' + DOW[nd.getDay()] + " " + pad(nd.getDate()) + "/" + pad(nd.getMonth() + 1) + "</b> lúc 18:00 · Dữ liệu " + fmt(D.length) + " kỳ";
   if (S.meta && S.meta.updatedAt) h += " · cập nhật " + esc(new Date(S.meta.updatedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }));
   h += "</div>";
   if (stale) h += '<div class="note" style="margin-top:10px">Chưa có kết quả kỳ ' + DOW[pd.getDay()] + " " + pad(pd.getDate()) + "/" + pad(pd.getMonth() + 1) + ". Máy cập nhật tự động có thể đang chậm. Bạn có thể nhập tay ở dưới.</div>";
@@ -758,7 +759,7 @@ function viewOdds() {
   h += '<p class="small muted p">Giá vé ' + money(PRICE) + ". Tổng số bộ có thể chọn: " + fmt(G.total) + ". Trúng jackpot khó ngang tung đồng xu ra mặt ngửa " + Math.round(Math.log2(G.total)) + " lần liên tiếp.</p></section>";
 
   const c = S.calc;
-  h += '<section class="card stack" style="gap:12px"><div><h2>Tính thử</h2><p class="lead">Jackpot lấy theo kỳ mới nhất, bạn có thể sửa. Xem một vé thật sự đáng bao nhiêu tiền.</p></div>' +
+  h += '<section class="card stack" style="gap:12px"><div><h2>Tính thử</h2><p class="lead">Jackpot điền sẵn theo kỳ vừa quay. Hãy sửa thành con số đang chạy trên app Vietlott cho chính xác. Xem một vé thật sự đáng bao nhiêu tiền.</p></div>' +
     '<div class="fields"><label class="fld">Vé mỗi kỳ<input id="c-k" type="number" min="1" max="1000" inputmode="numeric" value="' + c.k + '"></label>' +
     '<label class="fld">Số kỳ<input id="c-m" type="number" min="1" max="2000" inputmode="numeric" value="' + c.m + '"></label>' +
     '<label class="fld">Jackpot (tỷ đồng)<input id="c-j" type="number" min="0" step="0.1" inputmode="decimal" placeholder="' + ((currentJ(g) || G.minJ) / 1e9).toLocaleString("en-US", { maximumFractionDigits: 1 }) + '" value="' + esc(c.j) + '"></label></div>' +
@@ -1007,7 +1008,7 @@ function aiContext(fresh) {
     tro_choi: G.name, so_ky_du_lieu: D.length, gia_ve: PRICE,
     lich_quay: g === "645" ? "Thứ Tư, Thứ Sáu, Chủ nhật 18:00" : "Thứ Ba, Thứ Năm, Thứ Bảy 18:00",
     ky_toi: isoOf(nextDraw(g)),
-    jackpot_hien_tai: J,
+    jackpot_ky_vua_quay_hoac_toi_thieu: J, ghi_chu_jackpot: "Jackpot kỳ tới cao hơn và tăng theo số vé bán; người dùng xem số đang chạy trên app Vietlott",
     ky_gan_nhat_co_nguoi_trung_jackpot: drawInfo(g) ? (drawInfo(g).winners == null ? "chưa rõ" : drawInfo(g).winners > 0 ? drawInfo(g).winners + " vé trúng" : "không ai trúng") : "chưa rõ",
     co_cau_giai: G.prizes.map(p => ({ giai: p.name, dieu_kien: p.cond, gia_tri: p.jackpot ? "jackpot " + J : p.value, xac_suat: "1/" + Math.round(G.total / p.ways) })),
     gia_tri_ky_vong_moi_ve_sau_thue: Math.round(ev(g, J, true)),
