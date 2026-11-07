@@ -1,5 +1,5 @@
 {
- "updatedAt": "2026-11-07T12:57:30Z",
+ "updatedAt": "2026-11-07T16:56:36Z",
  "jackpot645": 13783788500,
  "jackpot655": 42432448800,
  "jackpotAt": "2026-11-06",
@@ -15,7 +15,7 @@
    "date": "2026-11-07",
    "jackpot": 42432448800,
    "winners": null,
-   "tries": 1,
+   "tries": 2,
    "winners2": null
   }
  },
